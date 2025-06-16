@@ -22,14 +22,8 @@ export const initializeSocket = (io) => {
   io.on('connection', (socket) => {
     console.log('User connected:', socket.userId);
 
-    // Join any existing chat rooms for this user
-    activeChats.forEach((participants, roomId) => {
-      if (participants.includes(socket.userId)) {
-        socket.join(roomId);
-      }
-    });
-
     socket.on('join_chat', ({ room }) => {
+      // Join the socket room
       socket.join(room);
       
       // Add user to active participants
@@ -64,7 +58,10 @@ export const initializeSocket = (io) => {
       socket.leave(room);
       
       // Notify other users
-      io.to(room).emit('user_disconnected', { userId: socket.userId });
+      io.to(room).emit('user_disconnected', { 
+        userId: socket.userId,
+        room
+      });
     });
 
     socket.on('stream_frame', ({ room, frame }) => {
@@ -73,7 +70,8 @@ export const initializeSocket = (io) => {
       // Send frame to the specific chat room
       socket.to(room).emit('stream_frame', {
         userId: socket.userId,
-        frame
+        frame,
+        room
       });
     });
 
@@ -84,8 +82,17 @@ export const initializeSocket = (io) => {
       // Clean up chat rooms when user disconnects
       activeChats.forEach((participants, room) => {
         if (participants.includes(socket.userId)) {
-          io.to(room).emit('user_disconnected', { userId: socket.userId });
-          activeChats.delete(room);
+          io.to(room).emit('user_disconnected', { 
+            userId: socket.userId,
+            room
+          });
+          const index = participants.indexOf(socket.userId);
+          if (index > -1) {
+            participants.splice(index, 1);
+          }
+          if (participants.length === 0) {
+            activeChats.delete(room);
+          }
         }
       });
     });
