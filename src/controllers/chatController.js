@@ -111,4 +111,59 @@ export const getChatRequests = async (req, res) => {
     console.error('Get chat requests error:', error);
     res.status(500).json({ error: 'Server error' });
   }
+};
+
+export const getSentChatRequests = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+
+    if (!userId) {
+      return res.status(401).json({ error: 'User not authenticated' });
+    }
+
+    const result = await query(
+      `SELECT cr.*, u.username as receiver_username 
+       FROM chat_requests cr 
+       JOIN users u ON cr.receiver_id = u.id 
+       WHERE cr.sender_id = $1 AND cr.status = 'pending'`,
+      [userId]
+    );
+
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Get sent chat requests error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+};
+
+export const deleteChatRequest = async (req, res) => {
+  try {
+    const { requestId } = req.params;
+    const userId = req.user.userId;
+
+    if (!userId) {
+      return res.status(401).json({ error: 'User not authenticated' });
+    }
+
+    // Verify the request belongs to the user
+    const requestResult = await query(
+      'SELECT * FROM chat_requests WHERE id = $1 AND sender_id = $2',
+      [requestId, userId]
+    );
+
+    if (requestResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Chat request not found' });
+    }
+
+    // Delete the request
+    await query(
+      'DELETE FROM chat_requests WHERE id = $1',
+      [requestId]
+    );
+
+    res.json({ message: 'Chat request deleted' });
+  } catch (error) {
+    console.error('Delete chat request error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
 }; 
