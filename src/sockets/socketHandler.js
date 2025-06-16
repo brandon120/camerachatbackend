@@ -29,36 +29,13 @@ export const initializeSocket = (io) => {
       }
     });
 
-    socket.on('chat_request', async ({ receiverId }) => {
-      const room = `${socket.userId}-${receiverId}`;
+    socket.on('join_chat', ({ room }) => {
       socket.join(room);
-      io.to(receiverId).emit('chat_request', {
-        senderId: socket.userId,
-        room
+      // Notify all users in the room that a new user has joined
+      io.to(room).emit('chat_started', { 
+        room,
+        participants: activeChats.get(room) || []
       });
-    });
-
-    socket.on('chat_response', ({ room, accepted }) => {
-      if (accepted) {
-        // Store the chat room and its participants
-        const [user1, user2] = room.split('-');
-        activeChats.set(room, [user1, user2]);
-
-        // Notify both users that chat has started
-        io.to(room).emit('chat_started', { 
-          room,
-          participants: [user1, user2]
-        });
-
-        // Join both users to the room
-        io.sockets.sockets.forEach(s => {
-          if (s.userId === user1 || s.userId === user2) {
-            s.join(room);
-          }
-        });
-      } else {
-        io.to(room).emit('chat_rejected');
-      }
     });
 
     socket.on('stream_frame', ({ frame }) => {
