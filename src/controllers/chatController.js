@@ -2,8 +2,20 @@ import { query } from '../db/index.js';
 
 export const sendChatRequest = async (req, res) => {
   try {
-    const { receiverId } = req.body;
+    const { receiverUsername } = req.body;
     const senderId = req.user.userId;
+
+    // First get the receiver's ID from username
+    const receiverResult = await query(
+      'SELECT id FROM users WHERE username = $1',
+      [receiverUsername]
+    );
+
+    if (receiverResult.rows.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const receiverId = receiverResult.rows[0].id;
 
     // Check if request already exists
     const existingRequest = await query(
