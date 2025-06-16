@@ -5,6 +5,10 @@ export const sendChatRequest = async (req, res) => {
     const { receiverUsername } = req.body;
     const senderId = req.user.userId;
 
+    if (!senderId) {
+      return res.status(401).json({ error: 'User not authenticated' });
+    }
+
     // First get the receiver's ID from username
     const receiverResult = await query(
       'SELECT id FROM users WHERE username = $1',
@@ -28,12 +32,15 @@ export const sendChatRequest = async (req, res) => {
     }
 
     // Create new request
-    await query(
-      'INSERT INTO chat_requests (sender_id, receiver_id, status) VALUES ($1, $2, $3)',
+    const result = await query(
+      'INSERT INTO chat_requests (sender_id, receiver_id, status) VALUES ($1, $2, $3) RETURNING id',
       [senderId, receiverId, 'pending']
     );
 
-    res.status(201).json({ message: 'Chat request sent' });
+    res.status(201).json({ 
+      message: 'Chat request sent',
+      requestId: result.rows[0].id
+    });
   } catch (error) {
     console.error('Chat request error:', error);
     res.status(500).json({ error: 'Server error' });
@@ -45,17 +52,38 @@ export const respondToChatRequest = async (req, res) => {
     const { requestId, accepted } = req.body;
     const receiverId = req.user.userId;
 
-    // Update request status
-    const result = await query(
-      'UPDATE chat_requests SET status = $1 WHERE id = $2 AND receiver_id = $3 RETURNING *',
-      [accepted ? 'accepted' : 'rejected', requestId, receiverId]
+    if (!receiverId) {
+      return res.status(401).json({ error: 'User not authenticated' });
+    }
+
+    // Get the chat request and verify it belongs to the receiver
+    const requestResult = await query(
+      'SELECT * FROM chat_requests WHERE id = $1 AND receiver_id = $2',
+      [requestId, receiverId]
     );
 
-    if (result.rows.length === 0) {
+    if (requestResult.rows.length === 0) {
       return res.status(404).json({ error: 'Chat request not found' });
     }
 
-    res.json({ message: accepted ? 'Chat request accepted' : 'Chat request rejected' });
+    const request = requestResult.rows[0];
+
+    // Update request status
+    await query(
+      'UPDATE chat_requests SET status = $1 WHERE id = $2',
+      [accepted ? 'accepted' : 'rejected', requestId]
+    );
+
+    if (accepted) {
+      // Create a room ID for the chat
+      const room = `${request.sender_id}-${request.receiver_id}`;
+      res.json({ 
+        message: 'Chat request accepted',
+        room
+      });
+    } else {
+      res.json({ message: 'Chat request rejected' });
+    }
   } catch (error) {
     console.error('Chat response error:', error);
     res.status(500).json({ error: 'Server error' });
@@ -65,6 +93,10 @@ export const respondToChatRequest = async (req, res) => {
 export const getChatRequests = async (req, res) => {
   try {
     const userId = req.user.userId;
+
+    if (!userId) {
+      return res.status(401).json({ error: 'User not authenticated' });
+    }
 
     const result = await query(
       `SELECT cr.*, u.username as sender_username 
