@@ -31,24 +31,49 @@ export const initializeSocket = (io) => {
 
     socket.on('join_chat', ({ room }) => {
       socket.join(room);
+      
+      // Add user to active participants
+      if (!activeChats.has(room)) {
+        activeChats.set(room, []);
+      }
+      if (!activeChats.get(room).includes(socket.userId)) {
+        activeChats.get(room).push(socket.userId);
+      }
+      
       // Notify all users in the room that a new user has joined
       io.to(room).emit('chat_started', { 
         room,
-        participants: activeChats.get(room) || []
+        participants: activeChats.get(room)
       });
     });
 
-    socket.on('stream_frame', ({ frame }) => {
+    socket.on('leave_chat', ({ room }) => {
+      // Remove user from active participants
+      if (activeChats.has(room)) {
+        const participants = activeChats.get(room);
+        const index = participants.indexOf(socket.userId);
+        if (index > -1) {
+          participants.splice(index, 1);
+        }
+        if (participants.length === 0) {
+          activeChats.delete(room);
+        }
+      }
+      
+      // Leave the socket room
+      socket.leave(room);
+      
+      // Notify other users
+      io.to(room).emit('user_disconnected', { userId: socket.userId });
+    });
+
+    socket.on('stream_frame', ({ room, frame }) => {
       frameBuffer.updateFrame(socket.userId, frame);
       
-      // Send frame to all chat rooms the user is in
-      socket.rooms.forEach(room => {
-        if (room !== socket.id) { // Skip the socket's own room
-          socket.to(room).emit('stream_frame', {
-            userId: socket.userId,
-            frame
-          });
-        }
+      // Send frame to the specific chat room
+      socket.to(room).emit('stream_frame', {
+        userId: socket.userId,
+        frame
       });
     });
 
